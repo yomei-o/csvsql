@@ -28,6 +28,7 @@ either expressed or implied, of the FreeBSD Project.
 */
 
 //#define I_USE_EXCEL
+#define I_USE_RPN_ANALIZER
 
 #include <stdio.h>
 #include <string.h>
@@ -38,7 +39,9 @@ either expressed or implied, of the FreeBSD Project.
 #ifdef I_USE_EXCEL
 #include "kanji.h"
 #endif
-
+#ifdef I_USE_RPN_ANALIZER
+#include "rpn_sql.h"
+#endif
 #if defined(_WIN32) && !defined(__GNUC__)
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
@@ -1129,9 +1132,26 @@ static int cmd_select_asta_where(const char* str, void* out, int sz)
 	val[0] = 0;
 	r = get_a_is_b(eq, col, sizeof(col), val, sizeof(val));
 	if (r==0)h->child->mode_where = 1;
+#ifdef I_USE_RPN_ANALIZER
 	if (h->child->mode_where == 0){
-		// TODO analize where
+		h->child->rpn_alanizer = rpnsql_open();
+		if (h->child->rpn_alanizer == NULL)return -1;
+		r = rpnsql_analize(h->child->rpn_alanizer, eq);
+		if (r < 0){
+			rpnsql_close(h->child->rpn_alanizer);
+			h->child->rpn_alanizer = NULL;
+			return -1;
+		}
+		r = rpnsql_convert(h->child->rpn_alanizer);
+		if(r<0){
+
+			rpnsql_close(h->child->rpn_alanizer);
+			h->child->rpn_alanizer = NULL;
+			return -1;
+		}
+		h->child->mode_where = 2;
 	}
+#endif
 	if (h->child->mode_where == 0)return ret;
 
 	fp = sql_zengo_open(tag, "rb", SQL_PATH);
@@ -1168,15 +1188,45 @@ static int cmd_select_asta_where(const char* str, void* out, int sz)
 		strcpy(h->child->val, val);
 		return 0;
 	}
+#ifdef I_USE_RPN_ANALIZER
 	else if (h->child->mode_where == 2){
-		return -1;
+		ct = sql_get_param_num(buf);
+		if (ct + 1 >= MAX_COL)return -1;
+		for (i = 0; i < ct; i++){
+			tag[0] = 0;
+			csvread_copynstring(buf, tag, sizeof(tag), i);
+			mystrupr(tag);
+			h->child->rpn_str_id[i] = malloc(strlen(tag) + 10);
+			if (h->child->rpn_str_id[i] == NULL)return ret;
+			strcpy(h->child->rpn_str_id[i], tag);
+		}
+		return 0;
 	}
+#endif
 	return -1;
+}
+
+static int getval_select_asta_where(void*vp, const char* name, char* buf, int sz)
+{
+	struct sqlcsv_handle* h;
+	int ret = -1;
+	int col = -1;
+	int i;
+	h = (struct sqlcsv_handle*)vp;
+	for (i = 0; i < MAX_COL; i++){
+		if (strcmp(h->child->rpn_str_id[i], name) == 0 )
+		{
+			buf[0] = 0;
+			csvread_copynstring((char*)(h->child->rpn_gets), buf, sz, i);
+			return 0;
+		}
+	}
+	return ret;
 }
 
 static int cmd_select_asta_where_next(const char* str, void* out, int sz)
 {
-	int ret = -1;
+	int ret = -1,r;
 	struct sqlcsv_handle* h;
 	FILE* fp;
 	char buf[4096];
@@ -1205,9 +1255,20 @@ static int cmd_select_asta_where_next(const char* str, void* out, int sz)
 			ret = 0;
 			return ret;
 		}
+#ifdef I_USE_RPN_ANALIZER
 		else if (h->child->mode_where == 2){
-			return -1;
+			int result = 0;
+			const char* p;
+			h->child->rpn_gets = buf;
+			r=rpnsql_operation(h->child->rpn_alanizer, getval_select_asta_where, h);
+			if (r < 0)return -1;
+			p=rpnsql_get_result(h->child->rpn_alanizer);
+			if (p)sscanf(p, "%d", &result);
+			if (result == 0)continue;
+			strcpy(h->child->buf, buf);
+			return 0;
 		}
+#endif
 	}
 	return -1;
 }
@@ -1315,9 +1376,11 @@ static int cmd_delete(const char* str, void* out, int sz)
 	val1[0] = 0;
 	r = get_a_is_b(eq, col, sizeof(col), val1, sizeof(val1));
 	if (r == 0)mode_where = 1;
+#ifdef I_USE_RPN_ANALIZER
 	if (mode_where == 0){
 		// TODO analize where
 	}
+#endif
 	if (mode_where == 0)return ret;
 
 
@@ -1355,9 +1418,11 @@ static int cmd_delete(const char* str, void* out, int sz)
 
 		if (coln == -1)goto err;
 	}
+#ifdef I_USE_RPN_ANALIZER
 	else if (mode_where == 2){
 		return -1;
 	}
+#endif
 	while (1){
 		buf[0] = 0;
 		buf2[0] = 0;
@@ -1373,10 +1438,11 @@ static int cmd_delete(const char* str, void* out, int sz)
 				continue;
 			}
 		}
+#ifdef I_USE_RPN_ANALIZER
 		else if (mode_where == 2){
 			goto err;
 		}
-
+#endif
 		r = fputs(buf, fq);
 		if (r < 0)goto err;
 	}
@@ -1476,9 +1542,11 @@ static int cmd_update(const char* str, void* out, int sz)
 	val1[0] = 0;
 	r = get_a_is_b(eq, col, sizeof(col), val1, sizeof(val1));
 	if (r == 0)mode_where = 1;
+#ifdef I_USE_RPN_ANALIZER
 	if (mode_where == 0){
 		// TODO analize where
 	}
+#endif
 	if (mode_where == 0)return ret;
 
 
@@ -1515,10 +1583,11 @@ static int cmd_update(const char* str, void* out, int sz)
 		}
 		if (coln == -1)goto err;
 	}
+#ifdef I_USE_RPN_ANALIZER
 	else if (mode_where == 2){
 		return ret;
 	}
-
+#endif
 	for (j = 0; j < ids; j++){
 		for (i = 0; i < ct; i++){
 			tag[0] = 0;
@@ -1577,9 +1646,11 @@ static int cmd_update(const char* str, void* out, int sz)
 				continue;
 			}
 		}
+#ifdef I_USE_RPN_ANALIZER
 		else if (mode_where == 2){
 			goto err;
 		}
+#endif
 		r = fputs(buf, fq);
 		if (r < 0)goto err;
 	}
@@ -1654,6 +1725,16 @@ static void clear_child(HCSVSQL hdb)
 	int i;
 	if (hdb == NULL)return;
 	if (hdb->child == NULL)return;
+
+#ifdef I_USE_RPN_ANALIZER
+	if (hdb->child->rpn_alanizer)
+	{
+		rpnsql_close(hdb->child->rpn_alanizer);
+		hdb->child->rpn_alanizer = NULL;
+	}
+#endif
+
+
 	if (hdb->child && hdb->child->fp){
 		fclose(hdb->child->fp);
 		hdb->child->fp = NULL;
@@ -1662,6 +1743,10 @@ static void clear_child(HCSVSQL hdb)
 		if (hdb->child->ret_str[i]){
 			free(hdb->child->ret_str[i]);
 			hdb->child->ret_str[i] = NULL;
+		}
+		if (hdb->child->rpn_str_id[i]){
+			free(hdb->child->rpn_str_id[i]);
+			hdb->child->rpn_str_id[i] = NULL;
 		}
 	}
 	if (hdb->child->str)free(hdb->child->str);
@@ -1887,7 +1972,7 @@ int main()
 	char *user = "root";
 	char *passwd = "wanted";
 	char *db_name = "db_test";
-	int ret;
+	int ret=0;
 
 #if defined(_WIN32) && !defined(__GNUC__)
 	//	_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_WNDW);
@@ -1915,7 +2000,7 @@ int main()
 	ret = csvsql_exec(conn, "DROP TABLE IF EXISTS test");
 	printf("ret=%d\n", ret);
 #endif
-#if 1
+#if 0
 
 	//ret = csvsql_exec(conn, "CREATE TABLE IF NOT EXISTS test(id INTEGER,name CHAR)");
 	//printf("ret=%d\n", ret);
@@ -2077,6 +2162,24 @@ int main()
 	printf("%s\n", "delete from user_list where id =\"aaa\"");
 	ret = csvsql_exec(conn, "delete from user_list where   id=\"aaa\"   ");
 	printf("ret=%d\n", ret);
+	printf("\n");
+#endif
+
+
+#if 1
+	//
+	// test select where operator
+	//
+	printf("%s\n", "SELECT * from where id=123");
+	col = csvsql_prepare(conn, "select * from test where     id    !=   123    ");
+	if (col == NULL) {
+		csvsql_close(conn);
+		exit(-1);
+	}
+	while (csvsql_step(col)){
+		printf("%d : %s\n", csvsql_column_int(col, 0), csvsql_column_char(col, 1));
+	}
+	csvsql_free_result(col);
 	printf("\n");
 #endif
 

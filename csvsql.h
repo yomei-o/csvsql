@@ -58,7 +58,11 @@ struct sqlcsv_result{
 	char val[256];
 	int key_pos;
 	char* ret_str[MAX_COL];
+
 	int mode_where;
+	void* rpn_alanizer;
+	char* rpn_str_id[MAX_COL];
+	const char* rpn_gets;
 };
 
 typedef struct sqlcsv_handle* HCSVSQL;

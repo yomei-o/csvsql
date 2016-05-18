@@ -313,7 +313,7 @@ int rpnsql_analize(HRPNSQL h,const char* str)
 		}
 		str++;
 	}
-	print_token(h);
+	//print_token(h);
 	ret = 0;
 
 	return ret;
@@ -474,7 +474,7 @@ static int opfunc(HRPNSQL h)
 		h->result[h->res_count] = malloc(1024);
 		if (h->result[h->res_count] == NULL)return -1;
 		h->result[h->res_count][0] = 0;
-		t1 = h->getval(h->vp, v1,h->result[h->res_count], sizeof(h->result[h->res_count]));
+		t1 = h->getval(h->vp, v1,h->result[h->res_count], 1024);
 		if (t1 < 0)return -1;
 		p1 = h->result[h->res_count];
 		h->res_count++;
@@ -486,7 +486,7 @@ static int opfunc(HRPNSQL h)
 		h->result[h->res_count] = malloc(1024);
 		if (h->result[h->res_count] == NULL)return -1;
 		h->result[h->res_count][0] = 0;
-		t2 = h->getval(h->vp, v2, h->result[h->res_count], sizeof(h->result[h->res_count]));
+		t2 = h->getval(h->vp, v2, h->result[h->res_count], 1024);
 		if (t2 < 0)return -1;
 		p2 = h->result[h->res_count];
 		h->res_count++;
@@ -647,7 +647,7 @@ int rpnsql_operation(HRPNSQL h, int(*getval)(void*,const char* name,char* buf,in
 	while (1){
 		op = h->buffer[pt];
 		type = h->buffer_type[pt];
-		if (op == NULL)return -1;
+		if (op == NULL)break;
 		push(h, (char*)op, type);
 		if (type == RPNSQL_TYPE_OPERATOR){
 			r=opfunc(h);
@@ -696,7 +696,7 @@ static int getval(void*vp, const char* name, char* buf, int sz)
 }
 
 
-#if 1
+#if 0
 int main()
 {
 	HRPNSQL h;
