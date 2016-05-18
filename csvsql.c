@@ -28,7 +28,7 @@ either expressed or implied, of the FreeBSD Project.
 */
 
 //#define I_USE_EXCEL
-#define I_USE_RPN_ANALIZER
+//#define I_USE_RPN_ANALIZER
 
 #include <stdio.h>
 #include <string.h>
@@ -841,6 +841,9 @@ static int cmd_drop(const char* str, void* out, int sz)
 	return ret;
 }
 
+//
+// insert 
+//
 
 static int cmd_insert(const char* str, void* out, int sz)
 {
@@ -922,6 +925,11 @@ err:
 	return ret;
 }
 
+
+
+//
+// select max
+//
 
 static int cmd_select_max(const char* str, void* out, int sz)
 {
@@ -1023,6 +1031,9 @@ end:
 }
 
 
+//
+// select asta
+//
 static int cmd_select_asta(const char* str, void* out, int sz)
 {
 	int ret = -1,ct=2,r;
@@ -1087,6 +1098,10 @@ static int cmd_select_asta_next(const char* str, void* out, int sz)
 	return ret;
 }
 
+
+//
+// select where
+//
 
 static int cmd_select_asta_where(const char* str, void* out, int sz)
 {
@@ -1306,6 +1321,10 @@ static int cmd_select(const char* str, void* out, int sz)
 	return ret;
 }
 
+//
+// delete
+//
+
 static int path_copy(const char* fa,const char* fb)
 {
 	int ret = -1;
@@ -1328,6 +1347,30 @@ static int path_copy(const char* fa,const char* fb)
 	return ret;
 }
 
+struct rpn_cb{
+	char** rpn_str_id;
+	char* rpn_gets;
+};
+
+
+static int getval_delete(void*vp, const char* name, char* buf, int sz)
+{
+	struct rpn_cb* h;
+	int ret = -1;
+	int col = -1;
+	int i;
+	h = (struct rpn_cb*)vp;
+	for (i = 0; i < MAX_COL; i++){
+		if (strcmp(h->rpn_str_id[i], name) == 0)
+		{
+			buf[0] = 0;
+			csvread_copynstring((char*)(h->rpn_gets), buf, sz, i);
+			return 0;
+		}
+	}
+	return ret;
+}
+
 
 
 static int cmd_delete(const char* str, void* out, int sz)
@@ -1343,11 +1386,17 @@ static int cmd_delete(const char* str, void* out, int sz)
 	char val1[1024];
 	char val2[1024];
 	int ok=0;
+
 	int mode_where = 0;
+	void* rpn_alanizer = NULL;
+	char* rpn_str_id[MAX_COL];
+
 
 	FILE *fp = NULL, *fq = NULL;
 	char *p;
 	int coln = -1, i;
+
+	memset(rpn_str_id, 0, sizeof(rpn_str_id));
 
  	while (1){
 		r = sql_get_tag(str, ct, tag, sizeof(tag));
@@ -1378,10 +1427,16 @@ static int cmd_delete(const char* str, void* out, int sz)
 	if (r == 0)mode_where = 1;
 #ifdef I_USE_RPN_ANALIZER
 	if (mode_where == 0){
-		// TODO analize where
+		rpn_alanizer = rpnsql_open();
+		if (rpn_alanizer == NULL)goto err;
+		r = rpnsql_analize(rpn_alanizer, eq);
+		if (r < 0)goto err;
+		r = rpnsql_convert(rpn_alanizer);
+		if (r < 0)goto err;
+		mode_where = 2;
 	}
 #endif
-	if (mode_where == 0)return ret;
+	if (mode_where == 0)goto err;
 
 
 	fp = sql_zengo_open(file1, "rb", SQL_PATH);
@@ -1420,7 +1475,16 @@ static int cmd_delete(const char* str, void* out, int sz)
 	}
 #ifdef I_USE_RPN_ANALIZER
 	else if (mode_where == 2){
-		return -1;
+		ct = sql_get_param_num(buf);
+		if (ct + 1 >= MAX_COL)goto err;
+		for (i = 0; i < ct; i++){
+			tag[0] = 0;
+			csvread_copynstring(buf, tag, sizeof(tag), i);
+			mystrupr(tag);
+			rpn_str_id[i] = malloc(strlen(tag) + 10);
+			if (rpn_str_id[i] == NULL)goto err;
+			strcpy(rpn_str_id[i], tag);
+		}
 	}
 #endif
 	while (1){
@@ -1440,7 +1504,20 @@ static int cmd_delete(const char* str, void* out, int sz)
 		}
 #ifdef I_USE_RPN_ANALIZER
 		else if (mode_where == 2){
-			goto err;
+			struct rpn_cb cb;
+			int result = 0;
+
+			strcpy(buf2, buf);
+			cb.rpn_gets = buf2;
+			cb.rpn_str_id = rpn_str_id;
+			r = rpnsql_operation(rpn_alanizer, getval_delete, &cb);
+			if (r < 0)return -1;
+			p = rpnsql_get_result(rpn_alanizer);
+			if (p)sscanf(p, "%d", &result);
+			if (result == 1){
+				ok = 1;
+				continue;
+			}
 		}
 #endif
 		r = fputs(buf, fq);
@@ -1450,13 +1527,21 @@ static int cmd_delete(const char* str, void* out, int sz)
 
 	fclose(fp);
 	fclose(fq);
+	fp = NULL;
+	fq = NULL;
 
-	ret=path_copy(file2,file1);
-	sql_zengo_remove(file2,SQL_PATH);
-	return 0;
-
+	path_copy(file2,file1);
+	ret = 0;
 
 err:
+#ifdef I_USE_RPN_ANALIZER
+	if (rpn_alanizer){
+		rpnsql_close(rpn_alanizer);
+	}
+#endif
+	for (i = 0; i < MAX_COL; i++){
+		if (rpn_str_id[i])free(rpn_str_id[i]);
+	}
 	if (fp)fclose(fp);
 	if (fq)fclose(fq);
 	sql_zengo_remove(file2, SQL_PATH);
@@ -1464,6 +1549,37 @@ err:
 }
 
 
+//
+// update
+//
+
+static int isnumstr(const char* inn)
+{
+	if (inn == NULL)return 0;
+	while (*inn){
+		if (*inn<'0' || *inn>'9')return 0;
+		inn++;
+	}
+	return 1;
+}
+
+static void escape_string(char* out, const char* inn)
+{
+	int f;
+	f = isnumstr(inn);
+	if (f){
+		strcpy(out, inn);
+		return;
+	}
+	*out++ = '\"';
+	while (*inn){
+		*out++ = *inn;
+		if (*inn == '\"')*out++ = *inn;
+		inn++;
+	}
+	*out++ = '\"';
+	*out++ = 0;
+}
 static int cmd_update(const char* str, void* out, int sz)
 {
 	int ret = -1, ct = 0, r;
@@ -1480,7 +1596,10 @@ static int cmd_update(const char* str, void* out, int sz)
 	char val[MAX_COL][1024];
 	int key_col[MAX_COL];
 	int key_rcol[MAX_COL];
+
 	int mode_where = 0;
+	void *rpn_alanizer = NULL;
+	char* rpn_str_id[MAX_COL];
 
 	int ok = 0;
 	int ids = 0;
@@ -1488,6 +1607,8 @@ static int cmd_update(const char* str, void* out, int sz)
 	FILE *fp = NULL, *fq = NULL;
 	char *p, *st;
 	int coln, i,j;
+
+	memset(rpn_str_id, 0, sizeof(rpn_str_id));
 
 	for (i = 0; i < MAX_COL; i++){
 		key_col[i] = -1;
@@ -1542,13 +1663,20 @@ static int cmd_update(const char* str, void* out, int sz)
 	val1[0] = 0;
 	r = get_a_is_b(eq, col, sizeof(col), val1, sizeof(val1));
 	if (r == 0)mode_where = 1;
+
+
 #ifdef I_USE_RPN_ANALIZER
 	if (mode_where == 0){
-		// TODO analize where
+		rpn_alanizer = rpnsql_open();
+		if (rpn_alanizer == NULL)goto err;
+		r = rpnsql_analize(rpn_alanizer, eq);
+		if (r < 0)goto err;
+		r = rpnsql_convert(rpn_alanizer);
+		if (r < 0)goto err;
+		mode_where = 2;
 	}
 #endif
-	if (mode_where == 0)return ret;
-
+	if (mode_where == 0)goto err;
 
 	fp = sql_zengo_open(file1, "rb", SQL_PATH);
 	if (fp == NULL)goto err;
@@ -1585,7 +1713,16 @@ static int cmd_update(const char* str, void* out, int sz)
 	}
 #ifdef I_USE_RPN_ANALIZER
 	else if (mode_where == 2){
-		return ret;
+		ct = sql_get_param_num(buf);
+		if (ct + 1 >= MAX_COL)goto err;
+		for (i = 0; i < ct; i++){
+			tag[0] = 0;
+			csvread_copynstring(buf, tag, sizeof(tag), i);
+			mystrupr(tag);
+			rpn_str_id[i] = malloc(strlen(tag) + 10);
+			if (rpn_str_id[i] == NULL)goto err;
+			strcpy(rpn_str_id[i], tag);
+		}
 	}
 #endif
 	for (j = 0; j < ids; j++){
@@ -1631,7 +1768,7 @@ static int cmd_update(const char* str, void* out, int sz)
 						csvread_copynstring(buf2, eq, sizeof(eq), i);
 					}
 					else{
-						strcpy(eq, val[key_rcol[i]]);
+						csvread_copynstring(val[key_rcol[i]],eq, sizeof(eq), 0);
 					}
 #ifdef I_USE_EXCEL
 					{
@@ -1640,7 +1777,11 @@ static int cmd_update(const char* str, void* out, int sz)
 						kj_unicode_to_cp932_n(aaa, eq, sizeof(eq));
 					}
 #endif
-					fprintf(fq, "%s", eq);
+					{
+						char tmp[2048];
+						escape_string(tmp, eq);
+						fprintf(fq, "%s", tmp);
+					}
 				}
 				fprintf(fq, "\n");
 				continue;
@@ -1648,7 +1789,43 @@ static int cmd_update(const char* str, void* out, int sz)
 		}
 #ifdef I_USE_RPN_ANALIZER
 		else if (mode_where == 2){
-			goto err;
+			struct rpn_cb cb;
+			int result = 0;
+
+			strcpy(buf2, buf);
+			cb.rpn_gets = buf2;
+			cb.rpn_str_id = rpn_str_id;
+			r = rpnsql_operation(rpn_alanizer, getval_delete, &cb);
+			if (r < 0)return -1;
+			p = rpnsql_get_result(rpn_alanizer);
+			if (p)sscanf(p, "%d", &result);
+			if (result == 1){
+				ok = 1;
+				for (i = 0; i < ct; i++){
+					if (i != 0)fprintf(fq, ",");
+					eq[0] = 0;
+					if (key_rcol[i] == -1){
+						csvread_copynstring(buf2, eq, sizeof(eq), i);
+					}
+					else{
+						csvread_copynstring(val[key_rcol[i]],eq, sizeof(eq), 0);
+					}
+#ifdef I_USE_EXCEL
+					{
+						unsigned short aaa[1024];
+						kj_utf8_to_unicode_n(eq, aaa, sizeof(aaa));
+						kj_unicode_to_cp932_n(aaa, eq, sizeof(eq));
+					}
+#endif
+					{
+						char tmp[2048];
+						escape_string(tmp, eq);
+						fprintf(fq, "%s", tmp);
+					}
+				}
+				fprintf(fq, "\n");
+				continue;
+			}
 		}
 #endif
 		r = fputs(buf, fq);
@@ -1658,13 +1835,21 @@ static int cmd_update(const char* str, void* out, int sz)
 
 	fclose(fp);
 	fclose(fq);
+	fp = NULL;
+	fq = NULL;
 
-	ret = path_copy(file2, file1);
-	sql_zengo_remove(file2,SQL_PATH);
-	
-	return 0;
+	path_copy(file2, file1);
+	ret = 0;
 
 err:
+#ifdef I_USE_RPN_ANALIZER
+	if (rpn_alanizer){
+		rpnsql_close(rpn_alanizer);
+	}
+#endif
+	for (i = 0; i < MAX_COL; i++){
+		if (rpn_str_id[i])free(rpn_str_id[i]);
+	}
 	if (fp)fclose(fp);
 	if (fq)fclose(fq);
 	sql_zengo_remove(file2, SQL_PATH);
@@ -2000,7 +2185,7 @@ int main()
 	ret = csvsql_exec(conn, "DROP TABLE IF EXISTS test");
 	printf("ret=%d\n", ret);
 #endif
-#if 0
+#if 1
 
 	//ret = csvsql_exec(conn, "CREATE TABLE IF NOT EXISTS test(id INTEGER,name CHAR)");
 	//printf("ret=%d\n", ret);
@@ -2166,11 +2351,11 @@ int main()
 #endif
 
 
-#if 1
+#if 0
 	//
 	// test select where operator
 	//
-	printf("%s\n", "SELECT * from where id=123");
+	printf("%s\n", "SELECT * from where id!=123");
 	col = csvsql_prepare(conn, "select * from test where     id    !=   123    ");
 	if (col == NULL) {
 		csvsql_close(conn);
@@ -2181,6 +2366,16 @@ int main()
 	}
 	csvsql_free_result(col);
 	printf("\n");
+
+
+	//printf("%s\n", "delete from where id!=123");
+	//ret= csvsql_exec(conn, "delete from test where     id    !=   123    ");
+	//printf("ret=%d\n",ret);
+
+	printf("%s\n", "update set id=999 where id!=123");
+	ret = csvsql_exec(conn, "update test set id=999 where     id    !=   123    ");
+	printf("ret=%d\n", ret);
+
 #endif
 
 
