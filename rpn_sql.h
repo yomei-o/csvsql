@@ -30,26 +30,7 @@ either expressed or implied, of the FreeBSD Project.
 #ifndef RPN_SQL_H_
 #define RPN_SQL_H_
 
-#define STACK_MAX  100
-
-struct rpn_sql{
-	char* token[STACK_MAX+1];
-	int token_type[STACK_MAX + 1];
-	int token_pointer;
-	char *stack[STACK_MAX + 1];
-	int stack_type[STACK_MAX + 1];
-	int   stack_pointer;
-	char *buffer[STACK_MAX + 1];
-	int buffer_type[STACK_MAX + 1];
-	int res_count;
-	char *result[STACK_MAX + 1];
-	int result_type[STACK_MAX + 1];
-
-	int(*getval)(void*, const char*, char*, int);
-	void* vp;
-};
-
-
+struct rpn_sql;
 typedef struct rpn_sql* HRPNSQL;
 
 
