@@ -54,7 +54,6 @@ either expressed or implied, of the FreeBSD Project.
 #endif
 #endif
 
-#define SQL_PATH "excel"
 //
 // string
 //
@@ -715,6 +714,11 @@ static int cmd_create(const char* str, void* out, int sz)
 	char param[64];
 	char col[MAX_COL][64];
 	FILE* fp;
+	struct sqlcsv_handle* h;
+
+
+	if (out == NULL)return ret;
+	h = (struct sqlcsv_handle*)out;
 
 	r = sql_get_tag(str, 1, tag, sizeof(tag));
 	if (r < 0)return ret;
@@ -767,13 +771,13 @@ static int cmd_create(const char* str, void* out, int sz)
 	//	printf("col[%d]=>>%s<<\n",i, col[i]);
 	//}
 
-	fp = sql_zengo_open(tag, "rb", SQL_PATH);
+	fp = sql_zengo_open(tag, "rb", h->path);
 	if (fp){
 		fclose(fp);
 		if (exist)return 0;
 		return -1;
 	}
-	fp = sql_zengo_open(tag, "wt", SQL_PATH);
+	fp = sql_zengo_open(tag, "wt", h->path);
 	if (fp == NULL)return ret;
 
 	for (i = 0; i < ct; i++){
@@ -799,6 +803,11 @@ static int cmd_drop(const char* str, void* out, int sz)
 	const char*p;
 	char tag[256];
 	FILE* fp;
+	struct sqlcsv_handle* h;
+
+
+	if (out == NULL)return ret;
+	h = (struct sqlcsv_handle*)out;
 
 	r = sql_get_tag(str, 1, tag, sizeof(tag));
 	if (r < 0)return ret;
@@ -829,14 +838,14 @@ static int cmd_drop(const char* str, void* out, int sz)
 	if (strlen(tag)>200)return ret;
 	strcat(tag, ".csv");
 
-	fp = sql_zengo_open(tag, "rb", SQL_PATH);
+	fp = sql_zengo_open(tag, "rb", h->path);
 	if (fp==NULL){
 		if (exist)return 0;
 		return -1;
 	}
 	fclose(fp);
 	
-	ret=sql_zengo_remove(tag, SQL_PATH);
+	ret=sql_zengo_remove(tag, h->path);
 
 	return ret;
 }
@@ -853,6 +862,11 @@ static int cmd_insert(const char* str, void* out, int sz)
 	char buf[4096];
 	FILE* fp;
 	char tmp[4096];
+	struct sqlcsv_handle* h;
+
+
+	if (out == NULL)return ret;
+	h = (struct sqlcsv_handle*)out;
 
 	r = sql_get_tag(str, 1, tag, sizeof(tag));
 	if (r < 0)return ret;
@@ -875,7 +889,7 @@ static int cmd_insert(const char* str, void* out, int sz)
 	if (strlen(tag)>200)return ret;
 	strcat(tag, ".csv");
 
-	fp = sql_zengo_open(tag, "rb", SQL_PATH);
+	fp = sql_zengo_open(tag, "rb", h->path);
 	if (fp==NULL){
 		return -1;
 	}
@@ -889,7 +903,7 @@ static int cmd_insert(const char* str, void* out, int sz)
 	if (ct < 1 || ct2 < 1)return ret;
 	if (ct != ct2)return ret;
 
-	fp = sql_zengo_open(tag, "at", SQL_PATH);
+	fp = sql_zengo_open(tag, "at", h->path);
 	if (fp == NULL){
 		return -1;
 	}
@@ -974,7 +988,7 @@ static int cmd_select_max(const char* str, void* out, int sz)
 	mystrlwr(tag);
 	strcat(tag, ".csv");
 
-	fp = sql_zengo_open(tag, "rb", SQL_PATH);
+	fp = sql_zengo_open(tag, "rb", h->path);
 	if (fp == NULL)return ret;
 
 	buf[0] = 0;
@@ -1062,7 +1076,7 @@ static int cmd_select_asta(const char* str, void* out, int sz)
 	mystrlwr(tag);
 	strcat(tag, ".csv");
 
-	fp = sql_zengo_open(tag, "rb", SQL_PATH);
+	fp = sql_zengo_open(tag, "rb", h->path);
 	if (fp == NULL)return ret;
 	h->child->fp = fp;
 
@@ -1169,7 +1183,7 @@ static int cmd_select_asta_where(const char* str, void* out, int sz)
 #endif
 	if (h->child->mode_where == 0)return ret;
 
-	fp = sql_zengo_open(tag, "rb", SQL_PATH);
+	fp = sql_zengo_open(tag, "rb", h->path);
 	if (fp == NULL)return ret;
 	h->child->fp = fp;
 
@@ -1241,7 +1255,7 @@ static int getval_select_asta_where(void*vp, const char* name, char* buf, int sz
 
 static int cmd_select_asta_where_next(const char* str, void* out, int sz)
 {
-	int ret = -1,r;
+	int ret = -1,r=0;
 	struct sqlcsv_handle* h;
 	FILE* fp;
 	char buf[4096];
@@ -1325,14 +1339,20 @@ static int cmd_select(const char* str, void* out, int sz)
 // delete
 //
 
-static int path_copy(const char* fa,const char* fb)
+static int path_copy(void* out,const char* fa,const char* fb)
 {
 	int ret = -1;
 	int sz,wt;
 	char buf[1024 * 64];
 	FILE *fi = NULL, *fo = NULL;
-	fi = sql_zengo_open(fa, "rb", SQL_PATH);
-	fo= sql_zengo_open(fb, "wb", SQL_PATH);
+	struct sqlcsv_handle* h;
+
+
+	if (out == NULL)return ret;
+	h = (struct sqlcsv_handle*)out;
+
+	fi = sql_zengo_open(fa, "rb", h->path);
+	fo= sql_zengo_open(fb, "wb", h->path);
 	while (1){
 		sz = fread(buf, 1, 1024*64, fi);
 		if (sz < 1){
@@ -1390,6 +1410,11 @@ static int cmd_delete(const char* str, void* out, int sz)
 	int mode_where = 0;
 	void* rpn_alanizer = NULL;
 	char* rpn_str_id[MAX_COL];
+	struct sqlcsv_handle* h;
+
+
+	if (out == NULL)return ret;
+	h = (struct sqlcsv_handle*)out;
 
 
 	FILE *fp = NULL, *fq = NULL;
@@ -1439,9 +1464,9 @@ static int cmd_delete(const char* str, void* out, int sz)
 	if (mode_where == 0)goto err;
 
 
-	fp = sql_zengo_open(file1, "rb", SQL_PATH);
+	fp = sql_zengo_open(file1, "rb", h->path);
 	if (fp == NULL)goto err;
-	fq = sql_zengo_open(file2, "wb", SQL_PATH);
+	fq = sql_zengo_open(file2, "wb", h->path);
 	if (fq == NULL)goto err;
 
 
@@ -1530,7 +1555,7 @@ static int cmd_delete(const char* str, void* out, int sz)
 	fp = NULL;
 	fq = NULL;
 
-	path_copy(file2,file1);
+	path_copy(out,file2,file1);
 	ret = 0;
 
 err:
@@ -1544,7 +1569,7 @@ err:
 	}
 	if (fp)fclose(fp);
 	if (fq)fclose(fq);
-	sql_zengo_remove(file2, SQL_PATH);
+	sql_zengo_remove(file2, h->path);
 	return ret;
 }
 
@@ -1607,6 +1632,11 @@ static int cmd_update(const char* str, void* out, int sz)
 	FILE *fp = NULL, *fq = NULL;
 	char *p, *st;
 	int coln, i,j;
+	struct sqlcsv_handle* h;
+
+
+	if (out == NULL)return ret;
+	h = (struct sqlcsv_handle*)out;
 
 	memset(rpn_str_id, 0, sizeof(rpn_str_id));
 
@@ -1678,9 +1708,9 @@ static int cmd_update(const char* str, void* out, int sz)
 #endif
 	if (mode_where == 0)goto err;
 
-	fp = sql_zengo_open(file1, "rb", SQL_PATH);
+	fp = sql_zengo_open(file1, "rb", h->path);
 	if (fp == NULL)goto err;
-	fq = sql_zengo_open(file2, "wb", SQL_PATH);
+	fq = sql_zengo_open(file2, "wb", h->path);
 	if (fq == NULL)goto err;
 
 
@@ -1838,7 +1868,7 @@ static int cmd_update(const char* str, void* out, int sz)
 	fp = NULL;
 	fq = NULL;
 
-	path_copy(file2, file1);
+	path_copy(out,file2, file1);
 	ret = 0;
 
 err:
@@ -1852,7 +1882,7 @@ err:
 	}
 	if (fp)fclose(fp);
 	if (fq)fclose(fq);
-	sql_zengo_remove(file2, SQL_PATH);
+	sql_zengo_remove(file2, h->path);
 	return ret;
 }
 
@@ -1942,10 +1972,13 @@ static void clear_child(HCSVSQL hdb)
 HCSVSQL csvsql_connect(const char* server, const char* user, const char* pass, const char* dbname)
 {
 	HCSVSQL ret = NULL;
+	if (dbname == NULL || strlen(dbname) > 200)return ret;
 
 	ret = malloc(sizeof(struct sqlcsv_handle));
 	if (ret == NULL)return ret;
 	memset(ret,0,sizeof(struct sqlcsv_handle));
+
+	strcpy(ret->path, dbname);
 
 	return ret;
 }
@@ -1961,7 +1994,7 @@ int csvsql_exec(HCSVSQL hdb, const char* str)
 {
 	if (hdb == NULL || str == NULL)return -1;
 	clear_child(hdb);
-	return sql_exec(str, NULL, 0);
+	return sql_exec(str, hdb, 0);
 }
 
 HCSCOL csvsql_prepare(HCSVSQL hdb, const char* str)
@@ -2156,7 +2189,7 @@ int main()
 	char *sql_serv = "localhost";
 	char *user = "root";
 	char *passwd = "wanted";
-	char *db_name = "db_test";
+	char *db_name = "excel";
 	int ret=0;
 
 #if defined(_WIN32) && !defined(__GNUC__)

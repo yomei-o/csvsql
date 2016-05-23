@@ -43,6 +43,7 @@ extern "C"
 
 struct sqlcsv_handle{
 	struct sqlcsv_result* child;
+	char path[256];
 };
 	
 struct sqlcsv_result{
